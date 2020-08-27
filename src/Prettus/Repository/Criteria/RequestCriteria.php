@@ -99,19 +99,33 @@ class RequestCriteria implements CriteriaInterface
                     if ( $isFirstField || $modelForceAndWhere ) {
                         if (!is_null($value)) {
                             if(!is_null($relation)) {
-                                $query->whereHas($relation, function($query) use($field,$condition,$value) {
+                                try{
+                                    $query->whereHas($relation, function($query) use($field,$condition,$value) {
 //                                    $query->where($field,$condition,$value);
+                                        if(is_array($value)){
+                                            //if we have an array we want to search by multiple values for the same field
+                                            $query->where(function($query) use ($field,$condition, $value) {
+                                                foreach ($value as $val){
+                                                    $query->orWhere($field,$condition,$val);
+                                                }
+                                            });
+                                        } else {
+                                            $query->where($field,$condition,$value);
+                                        }
+                                    });
+                                }
+                                catch(\Exception $e){
                                     if(is_array($value)){
                                         //if we have an array we want to search by multiple values for the same field
-                                        $query->where(function($query) use ($field,$condition, $value) {
+                                        $query->where(function($query) use ($relation,$field,$condition, $value) {
                                             foreach ($value as $val){
-                                                $query->orWhere($field,$condition,$val);
+                                                $query->orWhere($relation . '.' . $field,$condition,$val);
                                             }
                                         });
                                     } else {
-                                        $query->where($field,$condition,$value);
+                                        $query->where($relation . '.' . $field,$condition,$value);
                                     }
-                                });
+                                }
                             } else {
 //                                $query->where($modelTableName.'.'.$field,$condition,$value);
                                 if(is_array($value)){
@@ -130,19 +144,33 @@ class RequestCriteria implements CriteriaInterface
                     } else {
                         if (!is_null($value)) {
                             if(!is_null($relation)) {
-                                $query->orWhereHas($relation, function($query) use($field,$condition,$value) {
+                                try{
+                                    $query->orWhereHas($relation, function($query) use($field,$condition,$value) {
 //                                    $query->where($field,$condition,$value);
+                                        if(is_array($value)){
+                                            //if we have an array we want to search multiple values for the same field
+                                            $query->where(function($query) use($field,$condition,$value) {
+                                                foreach ($value as $val){
+                                                    $query->orWhere($field,$condition,$val);
+                                                }
+                                            });
+                                        } else {
+                                            $query->where($field,$condition,$value);
+                                        }
+                                    });
+                                }
+                                catch(\Exception $e){
                                     if(is_array($value)){
-                                        //if we have an array we want to search multiple values for the same field
-                                        $query->where(function($query) use($field,$condition,$value) {
+                                        //if we have an array we want to search by multiple values for the same field
+                                        $query->where(function($query) use ($relation,$field,$condition, $value) {
                                             foreach ($value as $val){
-                                                $query->orWhere($field,$condition,$val);
+                                                $query->orWhere($relation . '.' . $field,$condition,$val);
                                             }
                                         });
                                     } else {
-                                        $query->where($field,$condition,$value);
+                                        $query->where($relation . '.' . $field,$condition,$value);
                                     }
-                                });
+                                }
                             } else {
 //                                $query->orWhere($modelTableName.'.'.$field, $condition, $value);
                                 //if we have an array we want to search multiple values for the same field
