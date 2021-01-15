@@ -1,4 +1,5 @@
 <?php
+
 namespace Prettus\Repository\Criteria;
 
 use Illuminate\Database\Eloquent\Builder;
@@ -13,15 +14,13 @@ use Prettus\Repository\Contracts\RepositoryInterface;
  * @package Prettus\Repository\Criteria
  * @author Anderson Andrade <contato@andersonandra.de>
  */
-class RequestCriteria implements CriteriaInterface
-{
+class RequestCriteria implements CriteriaInterface {
     /**
      * @var \Illuminate\Http\Request
      */
     protected $request;
 
-    public function __construct(Request $request)
-    {
+    public function __construct(Request $request) {
         $this->request = $request;
     }
 
@@ -29,35 +28,34 @@ class RequestCriteria implements CriteriaInterface
     /**
      * Apply criteria in query repository
      *
-     * @param         Builder|Model     $model
+     * @param Builder|Model $model
      * @param RepositoryInterface $repository
      *
      * @return mixed
      * @throws \Exception
      */
-    public function apply($model, RepositoryInterface $repository)
-    {
+    public function apply($model, RepositoryInterface $repository) {
         $fieldsSearchable = $repository->getFieldsSearchable();
-        $search = $this->request->get(config('repository.criteria.params.search', 'search'), null);
-        $searchFields = $this->request->get(config('repository.criteria.params.searchFields', 'searchFields'), null);
-        $filter = $this->request->get(config('repository.criteria.params.filter', 'filter'), null);
-        $orderBy = $this->request->get(config('repository.criteria.params.orderBy', 'orderBy'), null);
+        $search = $this->request->get(config('repository.criteria.params.search', 'search'), NULL);
+        $searchFields = $this->request->get(config('repository.criteria.params.searchFields', 'searchFields'), NULL);
+        $filter = $this->request->get(config('repository.criteria.params.filter', 'filter'), NULL);
+        $orderBy = $this->request->get(config('repository.criteria.params.orderBy', 'orderBy'), NULL);
         $sortedBy = $this->request->get(config('repository.criteria.params.sortedBy', 'sortedBy'), 'asc');
-        $with = $this->request->get(config('repository.criteria.params.with', 'with'), null);
-        $withCount = $this->request->get(config('repository.criteria.params.withCount', 'withCount'), null);
-        $searchJoin = $this->request->get(config('repository.criteria.params.searchJoin', 'searchJoin'), null);
+        $with = $this->request->get(config('repository.criteria.params.with', 'with'), NULL);
+        $withCount = $this->request->get(config('repository.criteria.params.withCount', 'withCount'), NULL);
+        $searchJoin = $this->request->get(config('repository.criteria.params.searchJoin', 'searchJoin'), NULL);
         $sortedBy = !empty($sortedBy) ? $sortedBy : 'asc';
 
         if ($search && is_array($fieldsSearchable) && count($fieldsSearchable)) {
 
             $searchFields = is_array($searchFields) || is_null($searchFields) ? $searchFields : explode(';', $searchFields);
             $fields = $this->parserFieldsSearch($fieldsSearchable, $searchFields);
-            $isFirstField = true;
+            $isFirstField = TRUE;
             $searchData = $this->parserSearchData($search);
             $search = $this->parserSearchValue($search);
             $modelForceAndWhere = strtolower($searchJoin) === 'and';
 
-            $model = $model->where(function ($query) use ($fields, $search, $searchData, $isFirstField, $modelForceAndWhere,$searchJoin) {
+            $model = $model->where(function ($query) use ($fields, $search, $searchData, $isFirstField, $modelForceAndWhere, $searchJoin) {
                 /** @var Builder $query */
 
                 foreach ($fields as $field => $condition) {
@@ -67,126 +65,210 @@ class RequestCriteria implements CriteriaInterface
                         $condition = "=";
                     }
 
-                    $value = null;
+                    $value = NULL;
 
                     $condition = trim(strtolower($condition));
 
                     if (isset($searchData[$field])) {
 //                        $value = ($condition == "like" || $condition == "ilike") ? "%{$searchData[$field]}%" : $searchData[$field];
                         $searchValues = $searchData[$field];
-                        if(is_array($searchValues)){
+                        if (is_array($searchValues)) {
                             //if we have an array of search values we need to keep them as array
-                            foreach($searchValues as $searchValue){
+                            foreach ($searchValues as $searchValue) {
                                 $value[] = ($condition == "like" || $condition == "ilike") ? "%{$searchValue}%" : $searchValue;
                             }
-                        } else {
+                        }
+                        else {
                             //searchValues contains a single string value
                             $value = ($condition == "like" || $condition == "ilike") ? "%{$searchValues}%" : $searchValues;
                         }
-                    } else {
-                        if (!is_null($search)) {
+                    }
+                    else {
+                        if (!is_null($search) && !in_array($condition, ['in', 'between'])) {
                             $value = ($condition == "like" || $condition == "ilike") ? "%{$search}%" : $search;
                         }
                     }
 
-                    $relation = null;
-                    if(stripos($field, '.')) {
+                    $relation = NULL;
+                    if (stripos($field, '.')) {
                         $explode = explode('.', $field);
                         $field = array_pop($explode);
                         $relation = implode('.', $explode);
                     }
+                    if ($condition === 'in') {
+                        $value = explode(',', $value);
+                        if (trim($value[0]) === "" || $field == $value[0]) {
+                            $value = NULL;
+                        }
+                    }
+                    if ($condition === 'between') {
+                        $value = explode(',', $value);
+                        if (count($value) < 2) {
+                            $value = NULL;
+                        }
+                    }
                     $modelTableName = $query->getModel()->getTable();
-                    if ( $isFirstField || $modelForceAndWhere ) {
+                    if ($isFirstField || $modelForceAndWhere) {
                         if (!is_null($value)) {
-                            if(!is_null($relation)) {
-                                try{
-                                    $query->whereHas($relation, function($query) use($field,$condition,$value,$searchJoin) {
-//                                    $query->where($field,$condition,$value);
-                                        if(is_array($value)){
+                            if (!is_null($relation)) {
+                                try {
+                                    $query->whereHas($relation, function ($query) use ($field, $condition, $value, $searchJoin) {
+
+                                        if ($condition === 'in') {
+                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                            $query->$whereCondition($field, $value);
+                                        }
+                                        elseif ($condition === 'between') {
+                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                            $query->$whereCondition($field, $value);
+                                        }
+                                        else {
+                                            if (is_array($value)) {
+                                                //if we have an array we want to search by multiple values for the same field
+                                                $query->where(function ($query) use ($field, $condition, $value, $searchJoin) {
+                                                    foreach ($value as $val) {
+                                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
+                                                        $query->$whereCondition($field, $condition, $val);
+                                                    }
+                                                });
+                                            }
+                                            else {
+                                                $query->where($field, $condition, $value);
+                                            }
+                                        }
+                                    });
+                                } catch (\Exception $e) {
+                                    if ($condition === 'in') {
+                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                        $query->$whereCondition($relation . '.' . $field, $value);
+                                    }
+                                    elseif ($condition === 'between') {
+                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                        $query->$whereCondition($relation . '.' . $field, $value);
+                                    }
+                                    else {
+                                        if (is_array($value)) {
                                             //if we have an array we want to search by multiple values for the same field
-                                            $query->where(function($query) use ($field,$condition, $value,$searchJoin) {
-                                                foreach ($value as $val){
+                                            $query->where(function ($query) use ($relation, $field, $condition, $value, $searchJoin) {
+                                                foreach ($value as $val) {
                                                     $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                                    $query->$whereCondition($field,$condition,$val);
+                                                    $query->$whereCondition($relation . '.' . $field, $condition, $val);
                                                 }
                                             });
-                                        } else {
-                                            $query->where($field,$condition,$value);
                                         }
-                                    });
-                                }
-                                catch(\Exception $e){
-                                    if(is_array($value)){
-                                        //if we have an array we want to search by multiple values for the same field
-                                        $query->where(function($query) use ($relation,$field,$condition, $value,$searchJoin) {
-                                            foreach ($value as $val){
-                                                $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                                $query->$whereCondition($relation . '.' . $field,$condition,$val);
-                                            }
-                                        });
-                                    } else {
-                                        $query->where($relation . '.' . $field,$condition,$value);
+                                        else {
+                                            $query->where($relation . '.' . $field, $condition, $value);
+                                        }
                                     }
-                                }
-                            } else {
-//                                $query->where($modelTableName.'.'.$field,$condition,$value);
-                                if(is_array($value)){
-                                    //if we have an array we want to search multiple values for the same field
-                                    $query->where(function($query) use ($modelTableName, $field,$condition, $value,$searchJoin) {
-                                        foreach ($value as $val){
-                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                            $query->$whereCondition($modelTableName . '.' . $field, $condition, $val);
-                                        }
-                                    });
-                                } else {
-                                    $query->where($modelTableName.'.'.$field,$condition,$value);
                                 }
                             }
-                            $isFirstField = false;
-                        }
-                    } else {
-                        if (!is_null($value)) {
-                            if(!is_null($relation)) {
-                                try{
-                                    $query->orWhereHas($relation, function($query) use($field,$condition,$value,$searchJoin) {
-//                                    $query->where($field,$condition,$value);
-                                        if(is_array($value)){
-                                            //if we have an array we want to search multiple values for the same field
-                                            $query->where(function($query) use($field,$condition,$value,$searchJoin) {
-                                                foreach ($value as $val){
-                                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                                    $query->$whereCondition($field,$condition,$val);
-                                                }
-                                            });
-                                        } else {
-                                            $query->where($field,$condition,$value);
-                                        }
-                                    });
+                            else {
+                                if ($condition === 'in') {
+                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                    $query->$whereCondition($modelTableName . '.' . $field, $value);
                                 }
-                                catch(\Exception $e){
-                                    if(is_array($value)){
-                                        //if we have an array we want to search by multiple values for the same field
-                                        $query->where(function($query) use ($relation,$field,$condition, $value,$searchJoin) {
-                                            foreach ($value as $val){
+                                elseif ($condition === 'between') {
+                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                    $query->$whereCondition($modelTableName . '.' . $field, $value);
+                                }
+                                else {
+                                    //$query->where($modelTableName.'.'.$field,$condition,$value);
+                                    if (is_array($value)) {
+                                        //if we have an array we want to search multiple values for the same field
+                                        $query->where(function ($query) use ($modelTableName, $field, $condition, $value, $searchJoin) {
+                                            foreach ($value as $val) {
                                                 $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                                $query->$whereCondition($relation . '.' . $field,$condition,$val);
+                                                $query->$whereCondition($modelTableName . '.' . $field, $condition, $val);
                                             }
                                         });
-                                    } else {
-                                        $query->where($relation . '.' . $field,$condition,$value);
+                                    }
+                                    else {
+                                        $query->where($modelTableName . '.' . $field, $condition, $value);
                                     }
                                 }
-                            } else {
-//                                $query->orWhere($modelTableName.'.'.$field, $condition, $value);
-                                //if we have an array we want to search multiple values for the same field
-                                if(is_array($value)){
-                                    foreach ($value as $val){
-                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                        $query->$whereCondition($modelTableName.'.'.$field, $condition, $value);
+                            }
+                            $isFirstField = FALSE;
+                        }
+                    }
+                    else {
+                        if (!is_null($value)) {
+                            if (!is_null($relation)) {
+                                try {
+                                    $query->orWhereHas($relation, function ($query) use ($field, $condition, $value, $searchJoin) {
+
+                                        if ($condition === 'in') {
+                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                            $query->$whereCondition($field, $value);
+                                        }
+                                        elseif ($condition === 'between') {
+                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                            $query->$whereCondition($field, $value);
+                                        }
+                                        else {
+
+
+                                            if (is_array($value)) {
+                                                //if we have an array we want to search multiple values for the same field
+                                                $query->where(function ($query) use ($field, $condition, $value, $searchJoin) {
+                                                    foreach ($value as $val) {
+                                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
+                                                        $query->$whereCondition($field, $condition, $val);
+                                                    }
+                                                });
+                                            }
+                                            else {
+                                                $query->where($field, $condition, $value);
+                                            }
+                                        }
+                                    });
+                                } catch (\Exception $e) {
+                                    if ($condition === 'in') {
+                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                        $query->$whereCondition($relation . '.' . $field, $value);
                                     }
-                                } else {
-                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
-                                    $query->$whereCondition($modelTableName.'.'.$field, $condition, $value);
+                                    elseif ($condition === 'between') {
+                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                        $query->$whereCondition($relation . '.' . $field, $value);
+                                    }
+                                    else {
+                                        if (is_array($value)) {
+                                            //if we have an array we want to search by multiple values for the same field
+                                            $query->where(function ($query) use ($relation, $field, $condition, $value, $searchJoin) {
+                                                foreach ($value as $val) {
+                                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
+                                                    $query->$whereCondition($relation . '.' . $field, $condition, $val);
+                                                }
+                                            });
+                                        }
+                                        else {
+                                            $query->where($relation . '.' . $field, $condition, $value);
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                if ($condition === 'in') {
+                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereIn' : 'whereIn';
+                                    $query->$whereCondition($modelTableName . '.' . $field, $value);
+                                }
+                                elseif ($condition === 'between') {
+                                    $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhereBetween' : 'whereBetween';
+                                    $query->$whereCondition($modelTableName . '.' . $field, $value);
+                                }
+                                else {
+
+                                    if (is_array($value)) {
+                                        foreach ($value as $val) {
+                                            $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
+                                            $query->$whereCondition($modelTableName . '.' . $field, $condition, $value);
+                                        }
+                                    }
+                                    else {
+                                        $whereCondition = (strtolower($searchJoin) === 'or') ? 'orWhere' : 'where';
+                                        $query->$whereCondition($modelTableName . '.' . $field, $condition, $value);
+                                    }
+
+
                                 }
                             }
                         }
@@ -197,13 +279,14 @@ class RequestCriteria implements CriteriaInterface
 
         if (isset($orderBy) && !empty($orderBy)) {
             $orderBySplit = explode(';', $orderBy);
-            if(count($orderBySplit) > 1) {
+            if (count($orderBySplit) > 1) {
                 $sortedBySplit = explode(';', $sortedBy);
                 foreach ($orderBySplit as $orderBySplitItemKey => $orderBySplitItem) {
                     $sortedBy = isset($sortedBySplit[$orderBySplitItemKey]) ? $sortedBySplit[$orderBySplitItemKey] : $sortedBySplit[0];
                     $model = $this->parserFieldsOrderBy($model, $orderBySplitItem, $sortedBy);
                 }
-            } else {
+            }
+            else {
                 $model = $this->parserFieldsOrderBy($model, $orderBySplit[0], $sortedBy);
             }
         }
@@ -235,10 +318,9 @@ class RequestCriteria implements CriteriaInterface
      * @param $sortedBy
      * @return mixed
      */
-    protected function parserFieldsOrderBy($model, $orderBy, $sortedBy)
-    {
+    protected function parserFieldsOrderBy($model, $orderBy, $sortedBy) {
         $split = explode('|', $orderBy);
-        if(count($split) > 1) {
+        if (count($split) > 1) {
             /*
              * ex.
              * products|description -> join products on current_table.product_id = products.id order by description
@@ -251,10 +333,18 @@ class RequestCriteria implements CriteriaInterface
             $sortColumn = $split[1];
 
             $split = explode(':', $sortTable);
-            if(count($split) > 1) {
+            $localKey = '.id';
+            if (count($split) > 1) {
                 $sortTable = $split[0];
-                $keyName = $table.'.'.$split[1];
-            } else {
+
+                $commaExp = explode(',', $split[1]);
+                $keyName = $table . '.' . $split[1];
+                if (count($commaExp) > 1) {
+                    $keyName = $table . '.' . $commaExp[0];
+                    $localKey = '.' . $commaExp[1];
+                }
+            }
+            else {
                 /*
                  * If you do not define which column to use as a joining column on current table, it will
                  * use a singular of a join table appended with _id
@@ -263,14 +353,15 @@ class RequestCriteria implements CriteriaInterface
                  * products -> product_id
                  */
                 $prefix = Str::singular($sortTable);
-                $keyName = $table.'.'.$prefix.'_id';
+                $keyName = $table . '.' . $prefix . '_id';
             }
 
             $model = $model
-                ->leftJoin($sortTable, $keyName, '=', $sortTable.'.id')
+                ->leftJoin($sortTable, $keyName, '=', $sortTable . $localKey)
                 ->orderBy($sortColumn, $sortedBy)
-                ->addSelect($table.'.*');
-        } else {
+                ->addSelect($table . '.*');
+        }
+        else {
             $model = $model->orderBy($orderBy, $sortedBy);
         }
         return $model;
@@ -281,8 +372,7 @@ class RequestCriteria implements CriteriaInterface
      *
      * @return array
      */
-    protected function parserSearchData($search)
-    {
+    protected function parserSearchData($search) {
         $searchData = [];
 
         if (stripos($search, ':')) {
@@ -294,21 +384,21 @@ class RequestCriteria implements CriteriaInterface
                     $fieldAndValues = explode(':', $row);
                     //check if we have more than one (field search) value
                     //first item in array is field name string
-                    if(count($fieldAndValues) > 2){
+                    if (count($fieldAndValues) > 2) {
                         $field = array_shift($fieldAndValues);
                         //what remains are multiple search values in array
                         $value = $fieldAndValues;
-                    } else {
+                    }
+                    else {
                         //if we only have field name and one search value just set them
                         list($field, $value) = $fieldAndValues;
                     }
-                    try{
+                    try {
                         $json_value = json_decode($value);
-                        if($json_value !== null){
+                        if ($json_value !== NULL) {
                             $value = $json_value;
                         }
-                    }
-                    catch(\Exception $exp){
+                    } catch (\Exception $exp) {
 
                     }
                     $searchData[$field] = $value;
@@ -326,8 +416,7 @@ class RequestCriteria implements CriteriaInterface
      *
      * @return null
      */
-    protected function parserSearchValue($search)
-    {
+    protected function parserSearchValue($search) {
 
         if (stripos($search, ';') || stripos($search, ':')) {
             $values = explode(';', $search);
@@ -338,19 +427,18 @@ class RequestCriteria implements CriteriaInterface
                 }
             }
 
-            return null;
+            return NULL;
         }
 
         return $search;
     }
 
 
-    protected function parserFieldsSearch(array $fields = [], array $searchFields = null)
-    {
+    protected function parserFieldsSearch(array $fields = [], array $searchFields = NULL) {
         if (!is_null($searchFields) && count($searchFields)) {
             $acceptedConditions = config('repository.criteria.acceptedConditions', [
                 '=',
-                'like'
+                'like',
             ]);
             $originalFields = $fields;
             $fields = [];
